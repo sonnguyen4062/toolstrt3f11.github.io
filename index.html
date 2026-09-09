@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.5">
+    <title>Quản lý Tool · VAECO</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <style>
+        /* ... Giữ nguyên CSS ... */
+    </style>
+</head>
+<body>
+
+    <!-- KHUNG ĐĂNG NHẬP / ĐĂNG KÝ CHUNG -->
+    <div id="authWrapper">
+        <!-- ... Giữ nguyên phần HTML ... -->
+    </div>
+
+    <!-- APP GIAO DIỆN CHÍNH -->
+    <div id="appContainer">
+        <!-- ... Giữ nguyên phần HTML ... -->
+    </div>
+
+    <!-- MODAL GIA HẠN -->
+    <div class="modal-backdrop" id="renewModal">
+        <!-- ... Giữ nguyên ... -->
+    </div>
+
+    <script>
+        (function() {
+            // =========================================================================
+            // == 0. KHỞI TẠO LOCALSTORAGE CHO DỮ LIỆU ==
+            // =========================================================================
+            const STORAGE_DATA_KEY = 'vaeco_borrow_data_v2';
+            const STORAGE_STATE_KEY = 'vaeco_app_state_v2';
+
+            // Hàm lưu toàn bộ dữ liệu
+            function saveAllData() {
+                try {
+                    const data = {
+                        toolsData: toolsData,
+                        borrowRecords: borrowRecords,
+                        pendingRecords: pendingRecords,
+                        historyRecords: historyRecords,
+                        auditRecords: auditRecords,
+                        auditHistoryRecords: auditHistoryRecords,
+                        usersList: usersList,
+                        timestamp: Date.now()
+                    };
+                    localStorage.setItem(STORAGE_DATA_KEY, JSON.stringify(data));
+                } catch(e) {
+                    console.warn('Lưu dữ liệu thất bại:', e);
+                }
+            }
+
+            // Hàm lưu trạng thái giao diện
+            function saveAppState(panelId, selectedId, selectedMgmt) {
+                try {
+                    const state = {
+                        panelId: panelId || 'panel-overview',
+                        selectedAdminBorrowToolId: selectedId || selectedAdminBorrowToolId,
+                        selectedMgmtTool: selectedMgmt || selectedMgmtTool,
+                        currentGroup: currentGroup || 'all',
+                        currentFilter: currentFilter || '',
+                        selectedToolId: selectedToolId || null,
+                        monthFilter: document.getElementById('monthFilter')?.value || '2026-09'
+                    };
+                    localStorage.setItem(STORAGE_STATE_KEY, JSON.stringify(state));
+                } catch(e) {}
+            }
+
+            // Hàm tải dữ liệu
+            function loadAllData() {
+                try {
+                    const raw = localStorage.getItem(STORAGE_DATA_KEY);
+                    if (raw) {
+                        const data = JSON.parse(raw);
+                        if (data.toolsData) toolsData = data.toolsData;
+                        if (data.borrowRecords) borrowRecords = data.borrowRecords;
+                        if (data.pendingRecords) pendingRecords = data.pendingRecords;
+                        if (data.historyRecords) historyRecords = data.historyRecords;
+                        if (data.auditRecords) auditRecords = data.auditRecords;
+                        if (data.auditHistoryRecords) auditHistoryRecords = data.auditHistoryRecords;
+                        if (data.usersList) usersList = data.usersList;
+                        return true;
+                    }
+                } catch(e) {}
+                return false;
+            }
+
+            // =========================================================================
+            // == 1. QUẢN LÝ TÀI KHOẢN ==
+            // =========================================================================
+            const STORAGE_USERS_KEY = 'vaeco_users_db_v3';
+
+            const initialUsers = [
+                // ... Giữ nguyên initialUsers ...
+            ];
+
+            let usersList = [];
+            
+            function loadUsers() {
+                try {
+                    // Thử lấy từ storage data trước
+                    const raw = localStorage.getItem(STORAGE_DATA_KEY);
+                    if (raw) {
+                        const data = JSON.parse(raw);
+                        if (data.usersList && data.usersList.length > 0) {
+                            usersList = data.usersList;
+                            return;
+                        }
+                    }
+                    // Nếu không có, lấy từ users key riêng
+                    const data = localStorage.getItem(STORAGE_USERS_KEY);
+                    if (data) {
+                        usersList = JSON.parse(data);
+                        return;
+                    }
+                } catch(e) {}
+                usersList = JSON.parse(JSON.stringify(initialUsers));
+                localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usersList));
+            }
+
+            loadUsers();
+
+            function saveUsers() {
+                try {
+                    localStorage.setItem(STORAGE_USERS_KEY, JSON.stringify(usersList));
+                    // Cũng cập nhật trong data chính
+                    const raw = localStorage.getItem(STORAGE_DATA_KEY);
+                    if (raw) {
+                        const data = JSON.parse(raw);
+                        data.usersList = usersList;
+                        localStorage.setItem(STORAGE_DATA_KEY, JSON.stringify(data));
+                    }
+                } catch(e) {}
+            }
+
+            let currentUser = {
+                name: 'Nguyễn Văn Tuấn',
+                username: 'V1001',
+                vaecoCode: 'V1001',
+                department: 'Đội Cấu trúc (Sheetmetal)',
+                role: 'employee'
+            };
+
+            // ---- Dữ liệu Tool VAECO ----
+            const rawToolData = {
+                'RIVETING': [
+                    { name: 'SÚNG TÁN 5x', code: 'B08061/62/63', quantity: 5 },
+                    { name: 'CHỤP TÁN ADAPTOR', code: 'B08B69', quantity: 2 }
+                ],
+                'DRILLING & CUTTING': [
+                    { name: 'SÚNG KHOAN THẲNG RP2600', code: 'B08053/54', quantity: 3 },
+                    { name: 'SÚNG KHOAN THẲNG RP29000', code: 'B08048/49/50', quantity: 4 }
+                ],
+                'MEASURE TOOL': [
+                    { name: 'ĐỒNG HỒ SO', code: 'K2T333', quantity: 2 },
+                    { name: 'THƯỚC CẶP', code: 'B11064/65', quantity: 3 }
+                ]
+            };
+
+            let toolsData = [];
+            let idCounter = 1;
+            const groupNames = Object.keys(rawToolData);
+
+            // Chỉ khởi tạo toolsData nếu chưa có dữ liệu
+            function initToolsData() {
+                if (toolsData.length > 0) return;
+                
+                groupNames.forEach(group => {
+                    rawToolData[group].forEach(item => {
+                        if (item.quantity === 0) return;
+                        for (let i = 1; i <= item.quantity; i++) {
+                            let displayName = item.name;
+                            if (item.quantity > 1) {
+                                displayName = `${item.name} (${i}/${item.quantity})`;
+                            }
+                            toolsData.push({
+                                id: idCounter++,
+                                name: displayName,
+                                code: item.code,
+                                group: group,
+                                status: 'available',
+                                parentCode: item.code,
+                                parentName: item.name,
+                                totalQuantity: item.quantity,
+                                auditStatus: 'none',
+                                borrowCount: 0
+                            });
+                        }
+                    });
+                });
+            }
+
+            // Nếu không tải được dữ liệu, khởi tạo mới
+            const dataLoaded = loadAllData();
+            if (!dataLoaded) {
+                initToolsData();
+                // Khởi tạo dữ liệu mượn mẫu
+                const now = new Date();
+                const dToday = formatD(now);
+                const dTomorrow = formatD(new Date(now.getTime() + 86400000));
+                const dYesterday = formatD(new Date(now.getTime() - 86400000));
+                const tWarning = formatT(new Date(now.getTime() + 40 * 60000));
+                
+                borrowRecords = [
+                    {
+                        id: 101,
+                        toolId: 1,
+                        borrower: 'Nguyễn Văn Tuấn (V1001)',
+                        borrowerCode: 'V1001',
+                        borrowerDept: 'Đội Cấu trúc (Sheetmetal)',
+                        borrowDate: dToday,
+                        borrowTime: '07:30',
+                        returnDate: dTomorrow,
+                        returnTime: '17:00',
+                        location: 'Hangar 1',
+                        status: 'borrowed'
+                    },
+                    {
+                        id: 102,
+                        toolId: 4,
+                        borrower: 'Nguyễn Văn Tuấn (V1001)',
+                        borrowerCode: 'V1001',
+                        borrowerDept: 'Đội Cấu trúc (Sheetmetal)',
+                        borrowDate: dToday,
+                        borrowTime: '08:00',
+                        returnDate: dWarning,
+                        returnTime: tWarning,
+                        location: 'Hangar 2',
+                        status: 'borrowed'
+                    },
+                    {
+                        id: 103,
+                        toolId: 6,
+                        borrower: 'Nguyễn Văn Tuấn (V1001)',
+                        borrowerCode: 'V1001',
+                        borrowerDept: 'Đội Cấu trúc (Sheetmetal)',
+                        borrowDate: dYesterday,
+                        borrowTime: '09:00',
+                        returnDate: dYesterday,
+                        returnTime: '16:30',
+                        location: 'Hangar 3',
+                        status: 'borrowed'
+                    }
+                ];
+                pendingRecords = [];
+                historyRecords = [];
+                auditRecords = [];
+                auditHistoryRecords = [];
+            }
+
+            // =========================================================================
+            // == HÀM TIỆN ÍCH ==
+            // =========================================================================
+            function formatD(d) {
+                const date = new Date(d);
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            }
+
+            function formatT(d) {
+                const date = new Date(d);
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${hours}:${minutes}`;
+            }
+
+            // Các hàm còn lại giữ nguyên...
+
+            // =========================================================================
+            // == CẬP NHẬT CÁC HÀM THAO TÁC ĐỂ TỰ ĐỘNG LƯU ==
+            // =========================================================================
+            
+            // Lưu hàm gốc
+            const originalAddActivity = addActivity;
+            
+            // Ghi đè các hàm thao tác để tự động lưu
+            function wrapWithSave(fn) {
+                return function(...args) {
+                    const result = fn.apply(this, args);
+                    saveAllData();
+                    saveAppState();
+                    return result;
+                };
+            }
+
+            // Áp dụng cho các hàm chính
+            const originalStaffRequestReturn = window.staffRequestReturnTool;
+            const originalAdminConfirmReturn = window.adminConfirmReturnTool;
+            const originalAdminDirectReturn = window.adminDirectReturnTool;
+            const originalAdminStartAudit = window.adminStartAudit;
+            const originalAdminCompleteAudit = window.adminCompleteAudit;
+            const originalOpenRenewModal = window.openStaffRenewModal;
+
+            // Ghi đè để tự động lưu
+            window.staffRequestReturnTool = function(toolId) {
+                originalStaffRequestReturn(toolId);
+                saveAllData();
+                saveAppState();
+            };
+
+            window.adminConfirmReturnTool = function(toolId) {
+                originalAdminConfirmReturn(toolId);
+                saveAllData();
+                saveAppState();
+            };
+
+            window.adminDirectReturnTool = function(toolId) {
+                originalAdminDirectReturn(toolId);
+                saveAllData();
+                saveAppState();
+            };
+
+            window.adminStartAudit = function(parentCode) {
+                originalAdminStartAudit(parentCode);
+                saveAllData();
+                saveAppState();
+            };
+
+            window.adminCompleteAudit = function(parentCode) {
+                originalAdminCompleteAudit(parentCode);
+                saveAllData();
+                saveAppState();
+            };
+
+            // Lưu khi đăng nhập/đăng xuất
+            const originalLogin = handleLogin;
+            const originalLogout = document.getElementById('logoutBtn')?.click;
+
+            // =========================================================================
+            // == KHÔI PHỤC TRẠNG THÁI GIAO DIỆN ==
+            // =========================================================================
+            function restoreAppState() {
+                try {
+                    const raw = localStorage.getItem(STORAGE_STATE_KEY);
+                    if (raw) {
+                        const state = JSON.parse(raw);
+                        if (state.panelId) {
+                            switchPanel(state.panelId);
+                        }
+                        if (state.monthFilter) {
+                            const monthInput = document.getElementById('monthFilter');
+                            if (monthInput) monthInput.value = state.monthFilter;
+                        }
+                        selectedAdminBorrowToolId = state.selectedAdminBorrowToolId || null;
+                        selectedMgmtTool = state.selectedMgmtTool || null;
+                        currentGroup = state.currentGroup || 'all';
+                        currentFilter = state.currentFilter || '';
+                        selectedToolId = state.selectedToolId || null;
+                        return true;
+                    }
+                } catch(e) {}
+                return false;
+            }
+
+            // =========================================================================
+            // == CẬP NHẬT HÀM KHỞI TẠO ==
+            // =========================================================================
+            // Sau khi tất cả các hàm được định nghĩa, cập nhật để lưu trạng thái
+            function updateAndSave() {
+                updateToolBorrowCounts();
+                updateToolStatus();
+                saveAllData();
+                saveAppState();
+            }
+
+            // Cập nhật các hàm render để lưu trạng thái khi cần
+            const originalRenderAdminBorrowedList = renderAdminBorrowedList;
+            const originalRenderStaffReturnRenewList = renderStaffReturnRenewList;
+            const originalRenderToolManagement = renderToolManagement;
+
+            renderAdminBorrowedList = function() {
+                originalRenderAdminBorrowedList();
+                saveAppState('panel-borrow', selectedAdminBorrowToolId, selectedMgmtTool);
+            };
+
+            renderStaffReturnRenewList = function() {
+                originalRenderStaffReturnRenewList();
+                saveAppState('panel-return', selectedAdminBorrowToolId, selectedMgmtTool);
+            };
+
+            renderToolManagement = function() {
+                originalRenderToolManagement();
+                saveAppState('panel-return', selectedAdminBorrowToolId, selectedMgmtTool);
+            };
+
+            // =========================================================================
+            // == KHỞI ĐỘNG APP ==
+            // =========================================================================
+            // Xác định trạng thái đăng nhập
+            let isLoggedIn = false;
+            try {
+                const savedState = localStorage.getItem(STORAGE_STATE_KEY);
+                if (savedState) {
+                    const state = JSON.parse(savedState);
+                    if (state.currentUser) {
+                        currentUser = state.currentUser;
+                        isLoggedIn = true;
+                    }
+                }
+            } catch(e) {}
+
+            if (isLoggedIn) {
+                authWrapper.style.display = 'none';
+                appContainer.style.display = 'block';
+                document.getElementById('displayUser').textContent = currentUser.name;
+                document.getElementById('displayDept').textContent = `${currentUser.vaecoCode} · ${currentUser.department}`;
+                
+                applyUserView();
+                restoreAppState();
+                renderPendingList();
+                renderAuditList();
+                renderAuditHistory();
+                renderHistory();
+                updateStats();
+                updateToolBorrowCounts();
+                updateToolStatus();
+                saveAllData();
+            } else {
+                authWrapper.style.display = 'block';
+                appContainer.style.display = 'none';
+            }
+
+            // Lưu trạng thái khi chuyển panel
+            const originalSwitchPanel = switchPanel;
+            switchPanel = function(panelId) {
+                originalSwitchPanel(panelId);
+                saveAppState(panelId);
+            };
+
+            // Cập nhật sự kiện đăng nhập để lưu trạng thái
+            const originalHandleLogin = handleLogin;
+            handleLogin = function() {
+                originalHandleLogin();
+                // Lưu thông tin user vào state
+                try {
+                    const state = JSON.parse(localStorage.getItem(STORAGE_STATE_KEY) || '{}');
+                    state.currentUser = currentUser;
+                    localStorage.setItem(STORAGE_STATE_KEY, JSON.stringify(state));
+                } catch(e) {}
+                saveAllData();
+            };
+
+            // Cập nhật sự kiện đăng xuất
+            const logoutBtn = document.getElementById('logoutBtn');
+            if (logoutBtn) {
+                logoutBtn.addEventListener('click', function() {
+                    try {
+                        localStorage.removeItem(STORAGE_STATE_KEY);
+                    } catch(e) {}
+                    appContainer.style.display = 'none';
+                    authWrapper.style.display = 'block';
+                    loginMsg.textContent = '';
+                    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+                    document.getElementById('panel-overview')?.classList.add('active');
+                    document.querySelectorAll('.menu-item').forEach(m => m.classList.remove('active'));
+                    document.querySelector('.menu-item[data-panel="panel-overview"]')?.classList.add('active');
+                });
+            }
+
+            // Lưu khi mượn tool mới
+            const confirmBorrowBtn = document.getElementById('confirmBorrowBtn');
+            if (confirmBorrowBtn) {
+                const originalClick = confirmBorrowBtn.click;
+                confirmBorrowBtn.addEventListener('click', function() {
+                    setTimeout(() => {
+                        saveAllData();
+                        saveAppState();
+                    }, 100);
+                });
+            }
+
+            console.log('✅ Hệ thống đã được cập nhật với tính năng lưu trạng thái!');
+        })();
+    </script>
+</body>
+</html>
